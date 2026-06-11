@@ -1,0 +1,1237 @@
+\documentclass[12pt,a4paper]{article}
+
+% ===== Core Packages =====
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese,english]{babel}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{tcolorbox}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{bm}
+\usepackage{bbm}
+\usepackage{lmodern}
+\usepackage{fontawesome5}
+\usepackage{microtype}
+
+\geometry{margin=2.5cm}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric}
+
+% ===== Colors =====
+\definecolor{primary}{RGB}{0,90,170}
+\definecolor{accent}{RGB}{200,50,60}
+\definecolor{evgreen}{RGB}{0,130,80}
+\definecolor{rideorange}{RGB}{200,90,0}
+\definecolor{boxbg}{RGB}{235,245,255}
+\definecolor{formulabg}{RGB}{255,250,235}
+\definecolor{evbg}{RGB}{232,248,240}
+\definecolor{ridebg}{RGB}{255,245,230}
+
+% ===== Custom tcolorboxes =====
+\tcbuselibrary{skins, breakable, theorems}
+
+\newtcolorbox{definitionbox}[1]{
+  colback=boxbg, colframe=primary,
+  title=\textbf{#1}, fonttitle=\color{white}\bfseries,
+  colbacktitle=primary, breakable, arc=4pt
+}
+\newtcolorbox{formulabox}[1]{
+  colback=formulabg, colframe=accent,
+  title=\textbf{#1}, fonttitle=\color{white}\bfseries,
+  colbacktitle=accent, breakable, arc=4pt
+}
+\newtcolorbox{evbox}[1]{
+  colback=evbg, colframe=evgreen,
+  title=\textbf{#1}, fonttitle=\color{white}\bfseries,
+  colbacktitle=evgreen, breakable, arc=4pt
+}
+\newtcolorbox{ridebox}[1]{
+  colback=ridebg, colframe=rideorange,
+  title=\textbf{#1}, fonttitle=\color{white}\bfseries,
+  colbacktitle=rideorange, breakable, arc=4pt
+}
+
+% ===== Theorem environments =====
+\newtheorem{theorem}{Định lý}[section]
+\newtheorem{proposition}{Mệnh đề}[section]
+\newtheorem{definition}{Định nghĩa}[section]
+\newtheorem{remark}{Nhận xét}[section]
+
+% ===== Math operators =====
+\DeclareMathOperator{\argmin}{arg\,min}
+\DeclareMathOperator{\argmax}{arg\,max}
+\DeclareMathOperator*{\E}{\mathbb{E}}
+\DeclareMathOperator{\Prob}{\mathbb{P}}
+\DeclareMathOperator{\CVaR}{CVaR}
+\DeclareMathOperator{\Gini}{Gini}
+
+\hypersetup{colorlinks=true, linkcolor=primary, urlcolor=primary, citecolor=primary}
+
+\title{
+  \textbf{\Large Tối ưu hóa Dịch vụ Xe \& Giao hàng}\\[0.4em]
+  \large Công thức Toán học, Mô hình DS/AI và Thuật toán\\[0.3em]
+  \normalsize Tài liệu Kỹ thuật Chuyên sâu --- Green SM / Vingroup LogTech
+}
+\author{Phiên bản 2.0 --- Tháng 5, 2026}
+\date{}
+
+%% ================================================================
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+%% ================================================================
+\section{Tổng quan về Pipeline Tối ưu hóa}
+
+\subsection{Phân tầng quyết định}
+
+Trong hệ sinh thái LogTech của Green SM và Vingroup, các bài toán tối ưu hóa
+vận hành tạo thành một \emph{chuỗi phân tầng} (hierarchical optimization pipeline):
+
+\begin{itemize}[leftmargin=2em, itemsep=4pt]
+  \item \textbf{Tầng Chiến lược (Strategic):} Quy hoạch mạng lưới trạm sạc,
+        kho trung chuyển, phân bổ đội xe điện dị chủng --- cập nhật theo ngày/tuần.
+  \item \textbf{Tầng Chiến thuật (Tactical):} Dự báo cầu, điều phối tài xế,
+        định giá surge, quản lý SoC đội xe --- cập nhật theo giờ.
+  \item \textbf{Tầng Vận hành (Operational):} Ghép đơn, định tuyến, dispatch,
+        lịch sạc real-time --- độ trễ mili-giây đến giây.
+\end{itemize}
+
+\subsection{Ký hiệu chung}
+
+\begin{table}[h!]
+\centering
+\caption{Ký hiệu toán học sử dụng xuyên suốt tài liệu}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{>{\ttfamily}ll}
+\toprule
+\textbf{Ký hiệu} & \textbf{Ý nghĩa} \\
+\midrule
+$\mathcal{O} = \{o_1,\ldots,o_n\}$ & Tập $n$ đơn hàng / chuyến khách \\
+$\mathcal{D} = \{d_1,\ldots,d_m\}$ & Tập $m$ tài xế / phương tiện \\
+$\mathcal{G} = (\mathcal{V},\mathcal{E})$ & Đồ thị đường đi \\
+$\mathcal{F}$ & Tập trạm sạc điện \\
+$\tau(u,v)$ & Thời gian di chuyển từ $u$ đến $v$ \\
+$c_{ij}$ & Chi phí từ node $i$ đến node $j$ \\
+$[a_i,b_i]$ & Cửa sổ thời gian của node $i$ \\
+$q_i$ & Tải / số hành khách của đơn $i$ \\
+$\mathbf{Q}_k$ & Vector năng lực xe $k$ (xem Mục~\ref{sec:hetfleet}) \\
+$e_k(t)$ & State-of-Charge (SoC) xe $k$ tại thời điểm $t$ \\
+$\pi$ & Policy trong Reinforcement Learning \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ================================================================
+\section{Bài toán Ghép đơn --- Order Batching \& Pooling}
+
+\subsection{Phát biểu bài toán}
+
+\begin{definitionbox}{Bài toán Ghép đơn (Order Batching Problem --- OBP)}
+Tìm cách phân chia $\mathcal{O}$ thành các \emph{batch}
+$\mathcal{B} = \{B_1,\ldots,B_K\}$ sao cho
+$\mathcal{O} = B_1 \cup \cdots \cup B_K$, $B_i \cap B_j = \emptyset$,
+mỗi batch gán cho một tài xế, tối thiểu hóa tổng chi phí hệ thống.
+\end{definitionbox}
+
+\subsection{Mô hình ILP (đã linearize)}
+
+\subsubsection{Biến quyết định}
+
+\begin{alignat}{2}
+  y_{ik} &\in \{0,1\} \quad&&\text{: Đơn $i$ được gán cho tài xế $k$}\\
+  z_k    &\in \{0,1\} \quad&&\text{: Tài xế $k$ được kích hoạt}\\
+  w_{ijk}&\in \{0,1\} \quad&&\text{: Đơn $i$ và $j$ cùng giao cho tài xế $k$ (linearization)}
+\end{alignat}
+
+\subsubsection{Hàm mục tiêu}
+
+\begin{formulabox}{Hàm mục tiêu OBP --- dạng ILP tuyến tính}
+\begin{equation}
+  \min \;
+  \underbrace{\sum_{k}\sum_{i<j} c_{ij}\,w_{ijk}}_{\text{Chi phí di chuyển (tuyến tính)}}
+  + \lambda\underbrace{\sum_i \max\!\bigl(0,\,t_i^{\text{deliver}} - b_i\bigr)}_{\text{Phạt trễ}}
+  + \mu\underbrace{\sum_k z_k}_{\text{Kích hoạt}}
+\end{equation}
+\end{formulabox}
+
+\begin{remark}[McCormick Linearization]
+Hàm gốc $\sum c_{ij}y_{ik}y_{jk}$ là \textbf{QIP} (bậc 2). Ta đặt
+$w_{ijk} = y_{ik}y_{jk}$ và tuyến hóa bằng \emph{McCormick envelopes}:
+\begin{equation}
+  w_{ijk} \leq y_{ik},\quad w_{ijk} \leq y_{jk},\quad
+  w_{ijk} \geq y_{ik} + y_{jk} - 1,\quad w_{ijk} \geq 0.
+\end{equation}
+\end{remark}
+
+\subsubsection{Ràng buộc}
+
+\begin{alignat}{3}
+  &\sum_k y_{ik} = 1 &&\forall i &&\quad\text{(C1: Đúng 1 tài xế)}\\
+  &\sum_i q_i\,y_{ik} \leq Q_k\,z_k &&\forall k &&\quad\text{(C2: Sức chứa)}\\
+  &t_i^{\text{deliver}} \geq a_i &&\forall i &&\quad\text{(C3: Time window)}\\
+  &|B_k| \leq B_{\max} &&\forall k &&\quad\text{(C4: Giới hạn batch)}\\
+  &w_{ijk} \leq y_{ik},\; w_{ijk} \leq y_{jk} &&\forall i,j,k &&\quad\text{(C5: McCormick upper)}\\
+  &w_{ijk} \geq y_{ik}+y_{jk}-1 &&\forall i,j,k &&\quad\text{(C6: McCormick lower)}
+\end{alignat}
+
+\subsection{Phân cụm không-thời gian (Spatiotemporal Clustering)}
+
+\begin{formulabox}{Khoảng cách không-thời gian (Haversine)}
+\begin{equation}
+  d(o_i,o_j)
+  = \alpha\,d_{\text{geo}}^{pu}(i,j)
+  + \beta\,d_{\text{geo}}^{do}(i,j)
+  + \gamma\,|t_i^{req}-t_j^{req}|
+\end{equation}
+\begin{equation}
+  d_{\text{geo}}(i,j)
+  = 2R\arcsin\sqrt{\sin^2\!\tfrac{\Delta\phi}{2}
+    + \cos\phi_i\cos\phi_j\sin^2\!\tfrac{\Delta\lambda}{2}},\quad R = 6371\text{ km}
+\end{equation}
+\end{formulabox}
+
+\begin{algorithm}[H]
+\caption{ST-DBSCAN cho Ghép đơn cùng tuyến}
+\begin{algorithmic}[1]
+\Require $\mathcal{O},\;\varepsilon_s,\;\varepsilon_t,\;\mathrm{MinPts}$
+\Ensure  $\mathcal{B}=\{B_1,\ldots,B_K\}$
+\State Khởi tạo: mọi đơn là \textsc{unvisited}
+\For{mỗi $o_i\in\mathcal{O}$}
+  \If{$o_i$ là \textsc{unvisited}}
+    \State $N\leftarrow\mathrm{RangeQuery}(o_i,\varepsilon_s,\varepsilon_t)$
+    \If{$|N|<\mathrm{MinPts}$} Đánh dấu noise
+    \Else\; Tạo $B_k$; mở rộng cụm từ $N$ \EndIf
+  \EndIf
+\EndFor
+\State \Return $\mathcal{B}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Greedy Insertion --- thứ tự Pickup-Delivery}
+\begin{algorithmic}[1]
+\Require Batch $B_k$, vị trí tài xế $\ell_k$
+\Ensure  Lộ trình $\pi$
+\State $\pi\leftarrow[\;]$; unvisited $\leftarrow\bigcup_i\{pu_i,do_i\}$
+\While{unvisited $\neq\emptyset$}
+  \State $v^*\leftarrow\argmin_{v\in\mathrm{feasible}}\Delta_{\mathrm{cost}}(v\mid\pi)$
+  \Comment{$do_i$ hợp lệ chỉ khi $pu_i\in\pi$}
+  \State Thêm $v^*$ vào $\pi$
+\EndWhile
+\State \Return $\pi$
+\end{algorithmic}
+\end{algorithm}
+
+%% ================================================================
+\section{Bài toán Định tuyến Xe Động (Dynamic VRP)}
+
+\subsection{VRPTW --- ILP với Subtour Elimination tường minh}
+
+\begin{definitionbox}{Vehicle Routing Problem with Time Windows (VRPTW)}
+Tìm lộ trình $\{\pi_k\}$ sao cho mỗi khách thăm đúng 1 lần,
+trong cửa sổ $[a_i,b_i]$, tổng tải $\leq Q_k$, tổng chi phí nhỏ nhất.
+\end{definitionbox}
+
+Hàm mục tiêu:
+\begin{equation}
+  \min\sum_k\sum_{(i,j)\in\mathcal{E}}c_{ij}x_{ijk}
+\end{equation}
+
+Ràng buộc luồng và thời gian:
+\begin{align}
+  \sum_k\sum_j x_{ijk} &= 1 &&\forall i\in\mathcal{C} \tag{R1}\\
+  \sum_i q_i\sum_j x_{ijk} &\leq Q_k &&\forall k \tag{R4}\\
+  s_{ik}+\tau_{ij} &\leq s_{jk}+M(1-x_{ijk}) &&\forall i,j,k \tag{R5}\\
+  a_i \leq s_{ik} &\leq b_i &&\forall i,k \tag{R6}
+\end{align}
+
+\begin{remark}[Subtour Elimination --- MTZ đầy đủ]
+Ràng buộc R5 chỉ loại subtour \emph{ngầm} qua time consistency.
+Khi cửa sổ thời gian rộng, cần thêm \textbf{Miller--Tucker--Zemlin (MTZ)}:
+\begin{align}
+  u_{ik} - u_{jk} + n\,x_{ijk} &\leq n-1 &&\forall i\neq j,\;i,j\in\mathcal{C},\;k
+  \tag{MTZ}\\
+  1 &\leq u_{ik} \leq |\mathcal{C}| &&\forall i\in\mathcal{C},\;k
+  \tag{MTZ-bound}\\
+  u_{0k} &= 0 &&\forall k
+  \tag{MTZ-depot}
+\end{align}
+$u_{ik}$ là thứ tự (position) node $i$ trên tuyến $k$. Ràng buộc bound và
+depot \textbf{bắt buộc} phải có: thiếu chúng, MTZ không loại hết subtour
+khi depot không tham gia vào subtour bị loại.
+Hoặc dùng \textbf{DFJ cuts} mạnh hơn (nhưng số lượng exponential):
+$\sum_{i\in S,j\notin S}x_{ijk}\geq 1$ cho mọi $\emptyset\neq S\subsetneq\mathcal{C}$,
+thường được thêm on-the-fly dưới dạng cutting planes trong Branch-and-Cut.
+\end{remark}
+
+\subsection{Dynamic VRP --- Công thức MDP}
+
+\begin{definitionbox}{DVRP dưới dạng Markov Decision Process}
+$\mathcal{M}=(\mathcal{S},\mathcal{A},\mathcal{P},\mathcal{R},\gamma)$:
+\begin{itemize}
+  \item $s_t$: vị trí tài xế, đơn chờ, đơn đang giao, SoC đội xe, giao thông.
+  \item $a_t$: gán đơn, cập nhật lộ trình, lên lịch sạc.
+  \item $r_t = -\mathrm{cost}(a_t) - \lambda\,\mathrm{penalty}(a_t)$.
+  \item $\gamma\in[0.9,0.99]$.
+\end{itemize}
+\end{definitionbox}
+
+\begin{formulabox}{PPO Objective với GAE}
+\begin{equation}
+  \mathcal{L}^{\mathrm{PPO}}(\theta)
+  = \E_t\!\left[
+      \min\!\bigl(r_t(\theta)\hat{A}_t,\;
+        \mathrm{clip}(r_t(\theta),1{-}\varepsilon,1{+}\varepsilon)\hat{A}_t\bigr)
+    \right]
+\end{equation}
+\begin{equation}
+  r_t(\theta)=\frac{\pi_\theta(a_t|s_t)}{\pi_{\theta_\mathrm{old}}(a_t|s_t)},
+  \qquad
+  \hat{A}_t = \sum_{l=0}^{T-t}(\gamma\lambda_{\mathrm{gae}})^l\delta_{t+l},
+  \qquad
+  \delta_t = r_t+\gamma V(s_{t+1})-V(s_t)
+\end{equation}
+$T$ là truncation horizon; $\hat{A}_t$ được chuẩn hóa
+$\leftarrow (\hat{A}_t - \mu_A)/\sigma_A$ để giảm variance.
+\end{formulabox}
+
+\subsection{ST-GNN cho ETA Prediction}
+
+\begin{formulabox}{Message Passing (ST-GNN) + Quantile Loss}
+\begin{align}
+  \mathbf{m}_{ij}^{(l)} &= \phi^{(l)}(\mathbf{h}_i^{(l)},\mathbf{h}_j^{(l)},\mathbf{e}_{ij})\\
+  \mathbf{h}_i^{(l+1)} &= \psi^{(l)}\!\left(\mathbf{h}_i^{(l)},\bigoplus_{j\in\mathcal{N}(i)}\mathbf{m}_{ij}^{(l)}\right)\\
+  \hat{\tau}(u,v,t) &= \mathrm{MLP}\bigl([\mathbf{h}_u^{(L)}\|\mathbf{h}_v^{(L)}\|\mathbf{e}_{uv}\|\mathbf{t}_{\mathrm{emb}}]\bigr)
+\end{align}
+\begin{equation}
+  \mathcal{L}_{\mathrm{ETA}}
+  = \mathcal{L}_{\mathrm{Huber}}(\hat{\tau},\tau^*)
+  + \eta\sum_{q\in\{0.1,0.5,0.9\}}\mathcal{L}_q(\hat{\tau}_q,\tau^*)
+\end{equation}
+\end{formulabox}
+
+%% ================================================================
+\section{Điều phối Tài xế \& Ghép cặp Tối ưu}
+
+\subsection{Assignment Problem --- Trường hợp Mất cân bằng}
+
+\begin{formulabox}{Hàm chi phí ghép cặp đa tiêu chí}
+\begin{equation}
+  c_{kj}
+  = w_1\hat{\tau}(\ell_k,pu_j)
+  + w_2\,\mathrm{urgency}(o_j)
+  + w_3\,\mathrm{compat}(d_k,o_j)
+  + w_4\,\mathrm{fairness}(d_k),
+  \qquad
+  \mathrm{urgency}(o_j)=\frac{b_j-t_{\mathrm{now}}}{b_j-a_j}
+\end{equation}
+\end{formulabox}
+
+\begin{remark}[Trường hợp mất cân bằng và Auction Algorithm]
+Thực tế $|\mathcal{D}_{\mathrm{avail}}|\neq|\mathcal{O}_{\mathrm{pending}}|$.
+Giải pháp:
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{Padding dummy:} thêm node ảo với chi phí lớn để vuông hóa ma trận.
+  \item \textbf{Auction Algorithm} (Bertsekas 1988): mỗi đơn ``đấu giá'' tài xế,
+        độ phức tạp $O(n^2\log n)$, song song hóa tốt hơn Hungarian.
+  \item \textbf{Successive Shortest Path (SSP)} cho min-cost flow: tổng quát nhất.
+\end{enumerate}
+Với $n=1000$ tài xế, target latency 10ms đòi hỏi \textbf{batched matching}
+(chia vùng địa lý) hoặc \textbf{approximate methods} (beam search, greedy).
+\end{remark}
+
+\begin{algorithm}[H]
+\caption{Hungarian (Kuhn--Munkres) --- $O(n^3)$}
+\begin{algorithmic}[1]
+\Require $C\in\mathbb{R}^{n\times n}$ (pad dummy nếu cần)
+\Ensure $\sigma^*$
+\State Row reduce; Col reduce
+\Repeat
+  \State Tìm phủ tối thiểu $k$ đường
+  \If{$k=n$} \textbf{break} \EndIf
+  \State $\theta\leftarrow\min$ phần tử không phủ; cập nhật $C$
+\Until{phủ hoàn toàn}
+\State \Return $\sigma^*$ từ các số 0 độc lập
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Dự báo Cầu: ConvLSTM + GAT}
+
+\begin{align}
+  \mathbf{H}_t &= \mathrm{ConvLSTM}(\mathbf{H}_{t-1},\mathbf{X}_t)\\
+  \mathbf{Z}_t &= \mathrm{GAT}(\mathbf{H}_t,A_{\mathrm{grid}})\\
+  \hat{D}_{g,t+\Delta t} &= \mathrm{MLP}(\mathbf{Z}_t[g]\|\mathrm{embed}(t{+}\Delta t))
+\end{align}
+
+\subsection{Tái phân bổ tài xế (Repositioning)}
+
+\begin{definitionbox}{Time-Expanded Transportation Problem}
+Mở rộng transportation problem sang mạng time-expanded
+$G^T=(\mathcal{V}\times\mathcal{T},\mathcal{E}^T)$ để tính thời gian di chuyển
+giữa các ô lưới:
+\begin{equation}
+  \min\sum_{g,g',t}c_{gg'}\,f_{gg'}^t
+  \quad\text{s.t.}\quad
+  \sum_{g',t'}f_{gg'}^t\leq\hat{S}_g^t,\quad
+  \sum_{g,t}f_{gg'}^{t-\tau_{gg'}}\geq\max(0,\hat{D}_{g'}^{t'}-\hat{S}_{g'}^{t'})
+\end{equation}
+$\tau_{gg'}$ là thời gian di chuyển từ ô $g$ sang $g'$ --- thiếu yếu tố này
+trong formulation một giai đoạn là không thực tế.
+\end{definitionbox}
+
+\subsection{Đội xe Dị chủng (Heterogeneous Fleet)}
+\label{sec:hetfleet}
+
+Thay $Q_k\in\mathbb{R}$ (scalar) bằng vector năng lực:
+\begin{equation}
+  \mathbf{Q}_k = (\text{seats}_k,\;\text{range}_k,\;\text{cost\_per\_km}_k,\;
+                  \text{charge\_speed}_k,\;\text{class}_k)
+\end{equation}
+
+\begin{table}[h!]
+\centering
+\caption{Lớp xe trong đội Green SM (ví dụ)}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Xe} & \textbf{Chỗ ngồi} & \textbf{Range (km)} & \textbf{Sạc nhanh} & \textbf{Lớp dịch vụ}\\
+\midrule
+VinFast Bike & 1 & 80 & Không & Bike/Delivery\\
+VF5           & 4 & 320 & Có & Standard\\
+VF e34        & 5 & 380 & Có & Standard/Premium\\
+VF8           & 7 & 420 & Có (150 kW) & Premium\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ma trận tương thích giữa loại xe $k$ và loại yêu cầu $j$:
+\begin{equation}
+  \mathrm{compat\_fleet}(k,j) =
+  \begin{cases}
+    1 & \text{nếu }\mathrm{class}_k \geq \mathrm{required\_class}(j)
+        \;\wedge\; \mathrm{seats}_k \geq q_j\\
+    0 & \text{ngược lại}
+  \end{cases}
+\end{equation}
+
+\subsection{Driver Fairness --- Hình thức hóa}
+
+\begin{formulabox}{Các thước đo công bằng cho tài xế}
+\textbf{(a) Hệ số Gini thu nhập trong ca:}
+\begin{equation}
+  \Gini = \frac{\sum_{k,k'}|R_k - R_{k'}|}{2m\sum_k R_k},
+  \quad R_k = \text{thu nhập tài xế } k \text{ trong ca}
+\end{equation}
+\textbf{(b) Lexicographic Max-Min:} tối ưu lần lượt theo thứ tự từ tài xế
+thu nhập thấp nhất:
+$\max\min_k R_k$, subject to các ràng buộc routing.\\
+\textbf{(c) Nash Bargaining Solution:}
+$\max\prod_k(R_k - R_k^0)$ với $R_k^0$ là thu nhập tham chiếu (outside option).
+\end{formulabox}
+
+Hàm fairness penalty tích hợp vào cost matrix:
+$\mathrm{fairness}(d_k) = \max(0,\,\bar{R} - R_k^{\mathrm{current}})$,
+ưu tiên tài xế đang có thu nhập thấp hơn trung bình.
+
+\subsection{Ràng buộc Thực tế Nâng cao}
+
+\subsubsection{Soft Constraints + Augmented Lagrangian}
+\begin{equation}
+  \mathcal{L}_{\mathrm{total}}
+  = \mathcal{L}_{\mathrm{cost}}+\sum_c\lambda_c\,\mathrm{violation}_c(\bm{x}),
+  \qquad
+  \lambda_c^{(t+1)}=\lambda_c^{(t)}+\rho\cdot\mathrm{violation}_c(\bm{x}^{(t)})
+\end{equation}
+
+\subsubsection{Robust Optimization --- DRO \& CVaR}
+
+\begin{remark}[Phân phối thực tế của thời gian di chuyển]
+Giả định $\tau\sim\mathcal{N}(\hat{\tau},\sigma^2)$ không phù hợp thực tế:
+phân phối thời gian di chuyển đô thị Việt Nam là \textbf{heavy-tailed, right-skewed}
+(gần Lognormal hoặc Gamma). Dùng hai phương pháp thay thế:
+\end{remark}
+
+\textbf{(a) Distributionally Robust Optimization (DRO)} với Wasserstein ball:
+\begin{equation}
+  \min_{\bm{x}}\max_{\mathbb{Q}\in\mathcal{B}_\varepsilon(\hat{\mathbb{P}})}
+  \E_{\mathbb{Q}}[\ell(\bm{x},\xi)]
+\end{equation}
+$\mathcal{B}_\varepsilon(\hat{\mathbb{P}})=\{\mathbb{Q}:\mathcal{W}_p(\mathbb{Q},\hat{\mathbb{P}})\leq\varepsilon\}$
+là Wasserstein ball bán kính $\varepsilon$ quanh phân phối thực nghiệm $\hat{\mathbb{P}}$
+(Mohajerin Esfahani \& Kuhn 2018).
+
+\textbf{(b) CVaR Chance Constraint} (Rockafellar \& Uryasev 2000):
+\begin{equation}
+  \CVaR_\alpha[\tau(o_i)] \leq b_i - t_{\mathrm{now}}
+\end{equation}
+\begin{equation}
+  \CVaR_\alpha[\tau] = \min_{v}\left\{v + \frac{1}{1-\alpha}\E[\max(\tau-v,0)]\right\}
+\end{equation}
+$\alpha\in[0.9,0.99]$ kiểm soát mức độ bảo thủ của lịch giao hàng.
+
+\subsection{Lịch làm việc Tài xế \& Giới hạn Mệt mỏi (Crew Scheduling)}
+
+Mỗi tài xế Green SM / Xanh SM chịu ràng buộc pháp lý và an toàn:
+tổng thời gian lái tối đa $H_{\max}=8$ giờ/ngày, nghỉ bắt buộc sau mỗi
+$\Delta^{\mathrm{drive}}=4$ giờ liên tục.
+
+\begin{definitionbox}{Bài toán Crew Scheduling (CS)}
+\textbf{Biến quyết định:}
+\begin{itemize}
+  \item $z_{k\sigma}\in\{0,1\}$: tài xế $k$ được gán vào ca làm việc (shift) $\sigma$.
+  \item $t_k^{\mathrm{start}}, t_k^{\mathrm{end}}$: thời điểm bắt đầu/kết thúc ca.
+  \item $\delta_k^{(m)}$: khoảng thời gian lái liên tục thứ $m$ của tài xế $k$.
+\end{itemize}
+
+\textbf{Mục tiêu:} Tối thiểu tổng chi phí nhân sự và thời gian không có tài xế:
+\begin{equation}
+  \min \sum_k \sum_\sigma c_\sigma z_{k\sigma}
+  + \mu \sum_{t}\max\!\left(0,\, D(t) - \sum_k A_k(t)\right)
+\end{equation}
+$D(t)$ = nhu cầu tài xế dự báo tại thời điểm $t$;
+$A_k(t)=1$ nếu tài xế $k$ đang trong ca và chưa vượt giới hạn mệt mỏi.
+\end{definitionbox}
+
+\begin{formulabox}{Ràng buộc Mệt mỏi \& Thời gian lái}
+\begin{align}
+  \sum_\sigma z_{k\sigma} &\leq 1 &&\forall k \tag{CS1: Mỗi tài xế 1 ca/ngày}\\
+  t_k^{\mathrm{end}} - t_k^{\mathrm{start}} &\leq H_{\max} &&\forall k \tag{CS2: Tổng giờ lái}\\
+  \sum_m \delta_k^{(m)} &\leq H_{\max} &&\forall k \tag{CS3: Tổng tích lũy}\\
+  \delta_k^{(m)} &\leq \Delta^{\mathrm{drive}} &&\forall k,m \tag{CS4: Giới hạn liên tục}
+\end{align}
+\end{formulabox}
+
+\textbf{Phương pháp giải:}
+
+\begin{itemize}
+  \item \textbf{Set Partitioning / Column Generation:} Sinh ca khả dĩ (columns) qua
+    subproblem shortest-path trên đồ thị thời gian; giải master LP bằng simplex.
+  \item \textbf{Time-Space Network:} Mô hình hóa trạng thái tài xế như nút
+    $(\ell_k, t, \delta_k^{\mathrm{accum}})$ trên đồ thị không-thời gian; tìm đường
+    đi chi phí tối thiểu.
+  \item \textbf{RL-based Fatigue Model:} Mô hình hóa mức độ mệt mỏi như trạng thái
+    ẩn trong Markov Decision Process, điều chỉnh hành vi đề xuất ca theo trạng thái
+    thực tế (tốc độ phản xạ, tỷ lệ dừng đột ngột từ dữ liệu cảm biến xe).
+\end{itemize}
+
+%% ================================================================
+\section{Tối ưu hóa Hệ thống Xe Điện (EV-Specific)}
+
+\subsection{Mô hình Tiêu thụ Năng lượng}
+
+\begin{evbox}{Energy Consumption Model (phi tuyến)}
+\begin{equation}
+  h_{ij} = \alpha\,d_{ij} + \beta\,\Delta h_{ij} + \gamma\,v_{ij}^2\,d_{ij}
+           + \delta\,m_{\mathrm{load}}\,d_{ij} + \epsilon_{\mathrm{HVAC}}
+\end{equation}
+\begin{itemize}
+  \item $\alpha d_{ij}$: tiêu thụ cơ bản theo quãng đường (kWh/km)
+  \item $\beta\Delta h_{ij}$: năng lượng leo dốc (có thể âm khi xuống dốc)
+  \item $\gamma v_{ij}^2 d_{ij}$: lực cản khí động học (tốc độ cao tốn điện nhiều)
+  \item $\delta m_{\mathrm{load}} d_{ij}$: tải hàng hóa / hành khách
+  \item $\epsilon_{\mathrm{HVAC}}$: điều hòa nhiệt độ (phụ thuộc thời tiết)
+\end{itemize}
+\end{evbox}
+
+Tham số $(\alpha,\beta,\gamma,\delta)$ hiệu chỉnh (calibrate) trên dữ liệu telemetry
+thực tế của đội xe VinFast. Mô hình này thay $c_{ij}$ trong VRPTW bằng
+chi phí năng lượng $h_{ij}$.
+
+\subsection{E-VRP-CS --- Electric VRP with Charging Stations}
+
+\begin{evbox}{E-VRP-CS: Mở rộng VRPTW với SoC và trạm sạc}
+Mở rộng tập node: $\mathcal{V}' = \{0\}\cup\mathcal{C}\cup\mathcal{F}$
+($\mathcal{F}$ = tập trạm sạc V-Green).
+Biến mới:
+$e_{ki}\in[E_k^{\min},E_k^{\max}]$ = SoC xe $k$ khi đến node $i$;
+$y_{kf}\geq 0$ = lượng điện nạp tại trạm $f$.
+\end{evbox}
+
+\subsubsection{Ràng buộc SoC}
+
+Đặt biến phụ $p_{ijk} = h_{ij}\cdot x_{ijk}$ (tuyến hóa tích nhị phân--liên tục)
+với các ràng buộc McCormick:
+\begin{align}
+  p_{ijk} &\leq h_{ij} &&\forall i,j,k \tag{P1}\\
+  p_{ijk} &\leq M\cdot x_{ijk} &&\forall i,j,k \tag{P2}\\
+  p_{ijk} &\geq h_{ij} - M(1-x_{ijk}) &&\forall i,j,k \tag{P3}\\
+  p_{ijk} &\geq 0 &&\forall i,j,k \tag{P4}
+\end{align}
+
+Dùng $p_{ijk}$ thay thế, các ràng buộc SoC trở thành tuyến tính:
+\begin{align}
+  e_{kj} &\leq e_{ki} - p_{ijk} + M(1-x_{ijk}) &&\forall i,j,k
+            \tag{E1a: SoC upper}\\
+  e_{kj} &\geq e_{ki} - p_{ijk} - M(1-x_{ijk}) &&\forall i,j,k
+            \tag{E1b: SoC lower}\\
+  E_k^{\min} &\leq e_{ki} \leq E_k^{\max} &&\forall i,k
+              \tag{E2: SoC bound}\\
+  e_{kf}^{\mathrm{after}} &= e_{kf}^{\mathrm{before}} + y_{kf} &&\forall f,k
+                            \tag{E3: Charging gain}\\
+  y_{kf} &\leq E_k^{\max} - e_{kf}^{\mathrm{before}} &&\forall f,k
+          \tag{E4: Không sạc quá đầy}
+\end{align}
+
+\begin{remark}
+Khi $x_{ijk}=1$: E1a và E1b kẹp $e_{kj}=e_{ki}-h_{ij}$ (tiêu thụ đúng).
+Khi $x_{ijk}=0$: cả hai ràng buộc tự động relaxed bởi $\pm M$, không ràng buộc $e_{kj}$.
+Điều này đúng về mặt logic và khác hoàn toàn với cách viết $e_{kj}=\ldots+M(1-x_{ijk})$
+(dấu $=$ kết hợp big-M là không hợp lệ vì big-M chỉ làm relaxation một chiều).
+\end{remark}
+
+\subsubsection{Hàm mục tiêu E-VRP-CS}
+
+\begin{equation}
+  \min\underbrace{\sum_{k,i,j}c_{ij}x_{ijk}}_{\text{Vận chuyển}}
+  + \underbrace{\sum_{k,f}\rho_f^{\mathrm{elec}}\,y_{kf}}_{\text{Chi phí điện}}
+  + \underbrace{\sum_{k,f}\beta_{\mathrm{deg}}\,y_{kf}}_{\text{Hao mòn pin}}
+  + \lambda\underbrace{\sum_i\max(0,t_i-b_i)}_{\text{Trễ hạn}}
+\end{equation}
+
+$\rho_f^{\mathrm{elec}}$ phụ thuộc giờ sạc (off-peak rẻ hơn peak),
+$\beta_{\mathrm{deg}}$ là chi phí hao mòn pin mỗi kWh nạp.
+
+\subsection{Đường cong Sạc Phi tuyến (Piecewise Linear)}
+
+Tốc độ sạc chậm dần khi SoC $> 80\%$ (CC-CV protocol):
+\begin{equation}
+  \frac{de}{dt} =
+  \begin{cases}
+    P_{\max}/E_{\max} & e < 0.8\,E_{\max} \quad\text{(CC phase)}\\
+    P_{\max}/E_{\max}\cdot(1 - e/E_{\max})^2 & e \geq 0.8\,E_{\max} \quad\text{(CV phase)}
+  \end{cases}
+\end{equation}
+
+Xấp xỉ tuyến tính từng đoạn (piecewise linear) với $K_c$ breakpoints
+$0=e_0<e_1<\cdots<e_{K_c}=E_{\max}$ và độ dốc $\mu_s$ trên đoạn $[e_{s-1},e_s]$:
+
+\begin{formulabox}{Piecewise Linear Charging với SOS2}
+\begin{align}
+  t_{\mathrm{charge}}(y) &= \sum_{s=1}^{K_c}\mu_s\,\lambda_s \label{eq:pwl-time}\\
+  y &= \sum_{s=1}^{K_c}\lambda_s\,\Delta e_s, \quad \Delta e_s = e_s - e_{s-1}\\
+  \sum_{s=1}^{K_c}\lambda_s &= 1, \quad \lambda_s \geq 0 \quad\forall s
+  \tag{Convex combination}\\
+  \{\lambda_s\} &\in \mathrm{SOS2} \tag{SOS2: chỉ 2 biến liền kề $\neq 0$}
+\end{align}
+\end{formulabox}
+
+Ràng buộc SOS2 (Special Ordered Set type 2) đảm bảo chỉ tối đa 2 biến
+$\lambda_s, \lambda_{s+1}$ liền kề có thể khác 0 cùng lúc, giữ cho
+xấp xỉ luôn nằm trên đúng một đoạn tuyến tính của đường cong CC-CV.
+Không có SOS2, bộ giải có thể chọn tổ hợp $\lambda$ không liền kề
+cho ra nghiệm vô nghĩa về vật lý.
+
+\subsection{Charging Station Queuing \& Reservation}
+
+\begin{evbox}{Mô hình hàng đợi M/M/c tại trạm sạc}
+Trạm sạc $f$ có $c_f$ trụ. Xe đến theo Poisson($\lambda_f$),
+thời gian sạc $\sim\mathrm{Exp}(\mu_f)$. Mô hình M/M/c:
+\begin{equation}
+  \Prob(\text{đợi}) = \frac{(c_f\rho_f)^{c_f}}{c_f!\,(1-\rho_f)}\cdot
+  \left[\sum_{n=0}^{c_f-1}\frac{(c_f\rho_f)^n}{n!}
+        + \frac{(c_f\rho_f)^{c_f}}{c_f!\,(1-\rho_f)}\right]^{-1}
+  \quad (\text{Erlang C})
+\end{equation}
+$\rho_f = \lambda_f/(c_f\mu_f) < 1$. Thời gian chờ trung bình:
+$W_q = \Prob(\text{đợi})/(\mu_f(c_f-\lambda_f/\mu_f))$.
+\end{evbox}
+
+\subsubsection{Charging Slot Reservation}
+
+\begin{equation}
+  \min\sum_{k,f,t}w_{kft}\,\mathrm{wait}_{kft}
+  \quad\text{s.t.}\quad
+  \sum_k z_{kft} \leq c_f \;\forall f,t
+  \quad\text{(Capacity trụ sạc)}
+\end{equation}
+
+$z_{kft}\in\{0,1\}$: xe $k$ chiếm trụ tại trạm $f$ trong slot $t$.
+Hệ thống đặt chỗ trước (reservation) giảm $W_q$ xuống gần 0 cho các xe có kế hoạch.
+
+\subsection{Battery Degradation \& Lifecycle Cost}
+
+\begin{equation}
+  C_{\mathrm{deg}} = \underbrace{c_{\mathrm{bat}}\cdot\frac{1}{L_{\mathrm{cycle}}}}_{\mathrm{Rainflow\ counting}}
+  \quad\text{với}\quad
+  L_{\mathrm{cycle}}(DoD) = A\cdot e^{-B\cdot DoD}
+\end{equation}
+
+$DoD$ = depth of discharge mỗi chu kỳ sạc, $c_{\mathrm{bat}}$ = chi phí thay pin,
+$L_{\mathrm{cycle}}$ = số chu kỳ theo DoD (mô hình Arrhenius). Đưa $C_{\mathrm{deg}}$
+vào objective của E-VRP-CS khuyến khích sạc nhanh-nông thay vì sạc sâu.
+
+\subsection{Risk-Averse RL cho Range Anxiety}
+
+\emph{Range anxiety}: tâm lý sợ hết pin trước khi đến trạm sạc.
+Giải quyết bằng \textbf{CVaR-PPO}:
+
+\begin{formulabox}{CVaR-PPO cho an toàn năng lượng}
+\begin{equation}
+  \mathcal{L}^{\mathrm{CVaR-PPO}}(\theta)
+  = \mathcal{L}^{\mathrm{PPO}}(\theta)
+  - \kappa\,\CVaR_\alpha\!\left[\min_{t\leq T}e_k(t)\right]
+\end{equation}
+\begin{equation}
+  \text{Reward shaping: }\quad
+  r_t \leftarrow r_t - \eta\,\mathbb{1}[e_k(t) < E_k^{\mathrm{safe}}]
+  \cdot \left(\frac{E_k^{\mathrm{safe}} - e_k(t)}{E_k^{\mathrm{max}}}\right)^2
+\end{equation}
+\end{formulabox}
+
+$E_k^{\mathrm{safe}}$ là ngưỡng an toàn (ví dụ 15\% SoC). CVaR kiểm soát
+phân vị $\alpha$ của SoC tối thiểu, tránh chính sách ``liều'' cạn pin
+dù kỳ vọng phần thưởng cao.
+
+\subsection{Quy hoạch Mạng lưới Trạm Sạc (Charging Network Planning)}
+
+V-Green cần xác định \emph{vị trí} và \emph{công suất} cho mạng lưới trạm sạc mới
+trong các khu đô thị Vinhomes để tối thiểu chi phí đầu tư trong khi đảm bảo
+mức độ phục vụ (coverage) cho toàn đội xe.
+
+\begin{definitionbox}{Bài toán Facility Location cho Trạm Sạc}
+\textbf{Tập hợp:}
+\begin{itemize}
+  \item $\mathcal{F}$: tập vị trí ứng viên (candidate sites).
+  \item $\mathcal{D}$: tập điểm nhu cầu (demand points, ví dụ: khu dân cư, tòa nhà văn phòng).
+  \item $K$: tổng ngân sách trạm sạc.
+\end{itemize}
+
+\textbf{Biến quyết định:}
+$y_f\in\{0,1\}$: có đặt trạm tại vị trí $f$ không;
+$n_f\in\mathbb{Z}^+$: số đầu sạc tại $f$;
+$z_{df}\in[0,1\}$: tỷ lệ nhu cầu tại $d$ được phục vụ bởi $f$.
+
+\textbf{Mô hình:}
+\begin{align}
+  \min\quad & \sum_{f\in\mathcal{F}} c_f^{\mathrm{fixed}} y_f
+              + \sum_{f\in\mathcal{F}} c_f^{\mathrm{cap}} n_f
+              + \sum_{d,f} c_{df}^{\mathrm{travel}} z_{df} \notag\\[4pt]
+  \text{s.t.}\quad
+  & \sum_{f\in\mathcal{F}} z_{df} \geq 1 - \epsilon_d \quad\forall d \tag{FL1: Coverage}\\
+  & z_{df} \leq y_f \quad\forall d,f \tag{FL2: Open facility}\\
+  & \sum_d \lambda_d z_{df} \leq \mu_f n_f \quad\forall f \tag{FL3: Capacity}\\
+  & \sum_{f} y_f \leq K \tag{FL4: Budget}\\
+  & \tau_{df} \leq R_{\max} \;\Rightarrow\; z_{df}\text{ feasible} \tag{FL5: Range}
+\end{align}
+\textbf{FL5} loại bỏ kết nối $d\to f$ nếu khoảng cách $\tau_{df}$ vượt tầm hoạt động
+của xe $R_{\max}$.
+\end{definitionbox}
+
+\textbf{Phương pháp giải:}
+\begin{itemize}
+  \item \textbf{Capacitated Facility Location (CFL)}: NP-hard; giải bằng Branch \& Bound
+    hoặc Lagrangian Relaxation.
+  \item \textbf{$p$-Median Problem}: chọn đúng $p=K$ vị trí tối thiểu tổng khoảng cách
+    có trọng số; giải bằng heuristic Local Search hoặc GRASP.
+  \item \textbf{Simulation-Optimization}: Kết hợp Monte Carlo simulation (mô phỏng
+    các chuyến đi EV theo phân phối cầu thực tế) với metaheuristic (SA, GA) để
+    đánh giá phương án vị trí.
+\end{itemize}
+
+\subsection{Bài toán Vị trí Trạm Đổi Pin (Battery Swap Station Location)}
+
+Đổi pin (battery swap) như mô hình VinFast / NIO giải quyết điểm yếu về
+thời gian sạc lâu: thay vì sạc 30--60 phút, tài xế đổi pin trong $<5$ phút.
+
+\begin{definitionbox}{Battery Swap Station Location Problem (BSSLP)}
+\textbf{Đặc thù bổ sung so với Charging Network Planning:}
+\begin{itemize}
+  \item Mỗi trạm phải duy trì một \emph{kho pin} (battery inventory)
+    $I_f(t)$: số pin đầy sẵn sàng tại trạm $f$, thời điểm $t$.
+  \item Ràng buộc cân bằng kho:
+    \begin{equation}
+      I_f(t+1) = I_f(t) + R_f(t) - S_f(t)
+    \end{equation}
+    $R_f(t)$: pin được sạc xong (replenishment); $S_f(t)$: pin xuất cho xe.
+  \item \textbf{Stockout penalty:} $P_{\mathrm{so}}$ nếu $I_f(t)=0$ và có xe
+    đến đổi -- tái hiện bài toán newsvendor.
+\end{itemize}
+
+\textbf{Mô hình tích hợp Vị trí + Tồn kho:}
+\begin{equation}
+  \min\;\sum_f \left[c_f^{\mathrm{loc}}\,y_f
+    + c^{\mathrm{bat}}\,B_f
+    + \E_\xi\!\left(P_{\mathrm{so}}\,\mathrm{unmet}_f(\xi)\right)\right]
+\end{equation}
+$B_f$ = số pin dự trữ ban đầu tại $f$; $\xi$ = vector nhu cầu ngẫu nhiên.
+\end{definitionbox}
+
+\textbf{Newsvendor cho mỗi trạm:}
+\begin{equation}
+  B_f^* = F^{-1}_f\!\left(\frac{c^{\mathrm{sold}} - c^{\mathrm{bat}}}{c^{\mathrm{sold}} + P_{\mathrm{so}}}\right)
+\end{equation}
+$F_f$: CDF của nhu cầu đổi pin tại trạm $f$.
+
+\subsection{Vehicle-to-Grid (V2G) --- Mô hình hóa}
+
+Xe điện không chỉ là phương tiện tiêu thụ điện -- khi đỗ, chúng có thể
+\emph{phát điện ngược lưới} (V2G, Vehicle-to-Grid), tạo nguồn thu bổ sung
+và hỗ trợ cân bằng lưới điện quốc gia.
+
+\begin{evbox}{Mô hình tối ưu V2G}
+Mỗi xe $k$ trong khoảng thời gian đỗ $[t^a_k, t^d_k]$ (arrive / depart) có thể:
+\begin{itemize}
+  \item \textbf{Nạp điện (G2V):} $p_k^{\mathrm{G2V}}(t) \geq 0$
+  \item \textbf{Phát điện ngược (V2G):} $p_k^{\mathrm{V2G}}(t) \geq 0$
+\end{itemize}
+
+\textbf{SoC dynamics với V2G:}
+\begin{equation}
+  e_k(t+1) = e_k(t) + \eta^+\, p_k^{\mathrm{G2V}}(t)\,\Delta t
+              - \frac{1}{\eta^-}\,p_k^{\mathrm{V2G}}(t)\,\Delta t
+\end{equation}
+$\eta^+, \eta^-$: hiệu suất nạp/xả.
+
+\textbf{Ràng buộc:}
+\begin{align}
+  e_k^{\min} &\leq e_k(t) \leq e_k^{\max} &&\forall k,t \tag{V1: SoC bounds}\\
+  p_k^{\mathrm{G2V}}(t) + p_k^{\mathrm{V2G}}(t) &\leq P_k^{\max} &&\forall k,t \tag{V2: Power limit}\\
+  e_k(t^d_k) &\geq e_k^{\mathrm{depart}} &&\forall k \tag{V3: Departure SoC}\\
+  p_k^{\mathrm{G2V}}(t)\cdot p_k^{\mathrm{V2G}}(t) &= 0 &&\forall k,t \tag{V4: No simultaneous}
+\end{align}
+V4 là ràng buộc phi tuyến; linearize bằng biến nhị phân $b_k(t)\in\{0,1\}$:
+\begin{equation}
+  p_k^{\mathrm{G2V}}(t) \leq P_k^{\max} b_k(t),\quad
+  p_k^{\mathrm{V2G}}(t) \leq P_k^{\max}(1-b_k(t))
+\end{equation}
+
+\textbf{Mục tiêu tối ưu hóa toàn hệ thống:}
+\begin{equation}
+  \max\;\sum_k\sum_t\left[
+    \lambda_t^{\mathrm{sell}}\,p_k^{\mathrm{V2G}}(t)
+    - \lambda_t^{\mathrm{buy}}\,p_k^{\mathrm{G2V}}(t)
+  \right]\Delta t
+\end{equation}
+$\lambda_t^{\mathrm{sell}}, \lambda_t^{\mathrm{buy}}$: giá điện bán/mua tại thời điểm $t$ (time-of-use tariff).
+\end{evbox}
+
+\textbf{Ứng dụng thực tế:} Kết hợp lịch sạc M/M/c (§5.4) với V2G, hệ thống
+có thể tham gia thị trường điều tiết tần số (frequency regulation market),
+tạo nguồn doanh thu phụ cho V-Green đồng thời hỗ trợ lưới điện quốc gia
+trong giờ cao điểm.
+
+%% ================================================================
+\section{Tối ưu hóa Ride-hailing Chở Khách}
+
+\subsection{So sánh Delivery vs Ride-hailing}
+
+\begin{table}[h!]
+\centering
+\caption{Phân biệt Delivery (logistics) và Ride-hailing (hành khách)}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lp{4.5cm}p{4.5cm}}
+\toprule
+\textbf{Đặc trưng} & \textbf{Delivery (đã có)} & \textbf{Ride-hailing (mới)} \\
+\midrule
+Batching & OBP, ST-DBSCAN & Ride-pooling, Shareability Network \\
+Định tuyến & VRPTW, DVRP & DARP, RTV-graph \\
+Time window & 20--30 phút & 3--10 phút (khách hủy nhanh) \\
+Capacity & Thể tích/khối lượng & Số ghế $+$ comfort class \\
+Tỷ lệ hủy & Thấp ($< 5\%$) & Cao (8--15\% ở VN) \\
+Pricing & Cố định / zone & Surge real-time \\
+Detour & Không relevant & Ràng buộc cứng/mềm \\
+Thực thể chờ & Đơn hàng & Hành khách (có tâm lý) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Dial-a-Ride Problem (DARP)}
+
+\begin{definitionbox}{DARP --- Bài toán nền tảng cho Ride-hailing}
+DARP (Cordeau \& Laporte 2007): mở rộng VRPTW với ràng buộc:
+\begin{itemize}
+  \item \textbf{Precedence:} $pickup_i$ trước $dropoff_i$ cho từng khách $i$.
+  \item \textbf{Max ride time:} thời gian hành khách trên xe bị giới hạn:
+        $s_{i^-,k} - s_{i^+,k} \leq L_i$ ($i^+$ = pickup, $i^-$ = dropoff).
+  \item \textbf{Pairing:} pickup và dropoff cùng xe.
+\end{itemize}
+\end{definitionbox}
+
+\subsubsection{Công thức ILP chuẩn (Cordeau 2006)}
+
+Hàm mục tiêu:
+\begin{equation}
+  \min\sum_k\left(c_0 T_k + \sum_{i\in\mathcal{C}}d_i w_i\right)
+\end{equation}
+$T_k$ = tổng thời gian tuyến $k$; $w_i$ = thời gian chờ của khách $i$;
+$c_0$ = chi phí vận hành, $d_i$ = trọng số khó chịu của khách.
+
+Ràng buộc bổ sung so với VRPTW:
+
+\medskip
+\noindent\textbf{Ký hiệu phụ:} Đặt $\mathcal{C}^+_k(t) \subseteq \mathcal{C}$ là tập hành khách đang ở trên xe $k$ tại thời điểm $t$, tức là những khách đã được đón (pickup) nhưng chưa được trả (dropoff):
+\[
+  \mathcal{C}^+_k(t) \;=\; \bigl\{\,i\in\mathcal{C} : s_{i^+,k} \leq t < s_{i^-,k}\bigr\}.
+\]
+
+\begin{align}
+  s_{i^-,k} - s_{i^+,k} &\leq L_i &&\forall i,k \tag{D1: Max ride time}\\
+  s_{i^+,k} &\leq b_{i^+} &&\forall i,k \tag{D2: Pickup window}\\
+  \sum_k\left(\sum_j x_{i^+jk} - \sum_j x_{ji^-k}\right) &= 0 &&\forall i \tag{D3: Pairing}\\
+  \sum_{i\in\mathcal{C}^+_k(t)}q_i &\leq Q_k &&\forall k,\,t \tag{D4: Capacity (seats)}
+\end{align}
+
+\subsection{Shareability Network \& Ride-Pooling}
+
+\begin{ridebox}{Shareability Network (Santi et al.~2014, PNAS)}
+\textbf{Cấu trúc:} Đồ thị $G_S=(\mathcal{T},\mathcal{E}_S)$ trong đó:
+\begin{itemize}
+  \item Node $t_i\in\mathcal{T}$: một chuyến đi (trip request).
+  \item Edge $(t_i,t_j)\in\mathcal{E}_S$: hai chuyến có thể ghép chung xe
+        mà không vi phạm ngưỡng detour của cả hai khách.
+\end{itemize}
+\textbf{Bài toán:} Maximum Weighted Matching trên $G_S$:
+\begin{equation}
+  \max\sum_{(t_i,t_j)\in M}w_{ij},
+  \quad\text{s.t. mỗi trip thuộc tối đa 1 cặp ghép}
+\end{equation}
+$w_{ij}$ = tiết kiệm quãng đường khi ghép $t_i$ và $t_j$.
+\end{ridebox}
+
+\subsubsection{RTV-Graph: Ghép 2--4 hành khách}
+
+Alonso-Mora et al.\ (2017, PNAS) mở rộng sang ghép $n_{\max}=4$ khách:
+
+\begin{equation}
+  G_{\mathrm{RTV}} = (V_R\cup V_T\cup V_V,\;\mathcal{E}_{RT}\cup\mathcal{E}_{TV})
+\end{equation}
+
+\begin{itemize}
+  \item $V_R$ = requests, $V_T$ = feasible trips (tập hợp requests ghép được),
+        $V_V$ = vehicles.
+  \item ILP: $\min\sum c_t\,x_t + c_{\mathrm{ignore}}\sum_r(1-\sum_{t\ni r}x_t)$.
+  \item Giải gần đúng bằng Branch-and-Price hoặc column generation.
+\end{itemize}
+
+\subsection{Detour Constraint \& Passenger Acceptance}
+
+Mỗi khách $i$ chấp nhận đi vòng tối đa $\Delta_i^{\max}$:
+\begin{equation}
+  \tau_{\mathrm{actual}}(i) - \tau_{\mathrm{direct}}(i) \leq \Delta_i^{\max}
+\end{equation}
+
+Mô hình chấp nhận xác suất (discrete choice):
+\begin{equation}
+  P_i(\mathrm{accept}\mid\text{detour},\text{discount})
+  = \frac{1}{1+e^{-(\beta_0 - \beta_1\cdot\mathrm{detour}_i + \beta_2\cdot\mathrm{discount}_i)}}
+\end{equation}
+
+Chính sách giá tối ưu: giảm giá theo \% detour để duy trì tỷ lệ chấp nhận:
+$\mathrm{discount}_i^* = \argmax_d\left[P_i(\mathrm{accept})\cdot\mathrm{Revenue}(d)\right]$.
+
+\subsection{Cancellation \& No-show Prediction}
+
+\begin{ridebox}{Adjusted Cost Matrix với Cancellation Risk}
+Xác suất hủy $\hat{p}_{kj}^{\mathrm{cancel}} = \sigma(\mathbf{f}_{kj}^\top\bm\theta)$ với
+features: thời gian chờ ước tính, khoảng cách tài xế, lịch sử khách, thời tiết, giờ.
+\begin{equation}
+  c_{kj}^{\mathrm{adj}}
+  = (1-\hat{p}_{kj})\cdot c_{kj}
+  + \hat{p}_{kj}\cdot C_{\mathrm{wasted}}
+\end{equation}
+$C_{\mathrm{wasted}}$ = chi phí tài xế chạy không về điểm mới (deadhead cost).
+\end{ridebox}
+
+\subsubsection{Driver Acceptance Prediction}
+
+Tài xế cũng có quyền từ chối $\Rightarrow$ \textbf{Stochastic Bipartite Matching}:
+
+\begin{equation}
+  \E[\text{matched}] = \sum_{(k,j)\in M} P(\text{accept}_{kj})\cdot P(\text{not cancel}_{kj})
+\end{equation}
+
+Giải bằng \textbf{Online Bipartite Matching} với Robbins--Monro updates khi xác suất
+được học online từ phản hồi thực tế.
+
+\subsection{Dynamic Surge Pricing}
+
+\begin{ridebox}{Spatio-Temporal Surge Pricing Model}
+Hệ số surge $\rho_{g,t}\geq 1$ cho ô lưới $g$ tại thời điểm $t$:
+\begin{equation}
+  \rho_{g,t} = 1 + \kappa\cdot\max\!\left(0,\;\frac{\hat{D}_{g,t}-\hat{S}_{g,t}}{\hat{S}_{g,t}}\right)
+\end{equation}
+\end{ridebox}
+
+\subsubsection{Mô hình Cân bằng Cung-Cầu}
+
+Độ co giãn cầu theo giá:
+$\epsilon_D = \partial Q/\partial P\cdot P/Q < 0$
+
+Độ co giãn cung (tài xế online tăng khi giá tăng):
+$\epsilon_S = \partial S/\partial P\cdot P/S > 0$
+
+Giá cân bằng (market clearing):
+\begin{equation}
+  P^* = \argmin_P\left|D(P) - S(P)\right|
+  \quad\Leftrightarrow\quad
+  D_0 P^{\epsilon_D} = S_0 P^{\epsilon_S}
+  \quad\Rightarrow\quad
+  P^* = \left(\frac{D_0}{S_0}\right)^{\frac{1}{\epsilon_S-\epsilon_D}}
+\end{equation}
+
+\subsubsection{A/B Testing \& Causal Inference}
+
+Đánh giá tác động thực của surge pricing bằng:
+\begin{itemize}
+  \item \textbf{Switchback Experiments:} xen kẽ treatment/control theo block thời gian.
+  \item \textbf{Synthetic Control:} xây dựng counterfactual từ các ô lưới tương đồng.
+  \item Phương trình suy luận nhân quả (DiD):
+        $\tau_{\mathrm{ATT}} = \E[Y_{t,g}^{(1)}-Y_{t,g}^{(0)}\mid T_{t,g}=1]$.
+\end{itemize}
+
+\subsection{Airport / Hub Queueing \& Last-100m}
+
+\subsubsection{FIFO Queue tại Sân bay}
+
+Tại Nội Bài / Tân Sơn Nhất, cân bằng FIFO fairness vs proximity:
+
+\begin{equation}
+  \text{score}(k,j) = w_1\cdot\hat{\tau}(\ell_k,pu_j)
+  + w_2\cdot\left(t_{\mathrm{now}} - t_k^{\mathrm{queue}}\right)^{-1}
+\end{equation}
+
+Phần tử thứ hai ưu tiên tài xế chờ lâu hơn.
+
+\subsubsection{Last-100m Pickup Matching}
+
+Khu Vinhomes, sân bay, TTTM: nhiều cổng/terminal. Mismatch tốn 30s--2 phút/chuyến.
+
+\begin{equation}
+  pu_j^* = \argmin_{p\in\mathcal{P}_j}\left[
+    d(\ell_k, p) + \beta\cdot d(\ell_j^{\mathrm{actual}}, p)
+  \right]
+\end{equation}
+
+$\mathcal{P}_j$ = tập điểm đón khả dĩ (POI cluster), $\ell_j^{\mathrm{actual}}$
+= vị trí GPS thực của khách. POI clustering dùng DBSCAN trên lịch sử pickup
+kết hợp embedding từ bản đồ vector.
+
+\subsection{Hành khách Đa hạng \& Tối ưu Lexicographic (VIP Tiers)}
+
+Xanh SM vận hành nhiều hạng dịch vụ: Standard (xe thường), Plus (xe rộng),
+Premium (VinFast VF8/9, ghế da, wifi). Hệ thống cần đảm bảo khách Premium
+được phục vụ \emph{trước} và với xe phù hợp.
+
+\begin{ridebox}{Mô hình Lexicographic Multi-Objective Optimization}
+Đặt $\mathcal{K}^{(r)}$ là tập tài xế loại $r$ (Standard $r=1$, Plus $r=2$,
+Premium $r=3$). Yêu cầu đặt xe hạng $r$ \emph{chỉ} được ghép với tài xế
+loại $r'\geq r$.
+
+\textbf{Phân cấp mục tiêu Lexicographic:}
+\begin{equation}
+  \mathrm{lex\text{-}min}\;\bigl(W^{(3)},\, W^{(2)},\, W^{(1)}\bigr)
+\end{equation}
+$W^{(r)}$ = tổng thời gian chờ của khách hạng $r$. Tối ưu hóa lần lượt từ
+hạng cao xuống hạng thấp: trước tiên tối thiểu $W^{(3)}$ (Premium), rồi
+$W^{(2)}$ trong điều kiện $W^{(3)}$ đã tối ưu, v.v.
+
+\textbf{Ràng buộc hạng xe:}
+\begin{align}
+  x_{ijk} &= 0 \quad\forall k\in\mathcal{K}^{(r')}: r' < r_i
+    \tag{T1: Tier compatibility}\\
+  \sum_{k\in\mathcal{K}^{(r)}} x_{ijk} &\leq 1
+    \quad\forall i\in\mathcal{R}^{(r)}
+    \tag{T2: Single assignment}
+\end{align}
+$\mathcal{R}^{(r)}$ = tập yêu cầu đặt xe hạng $r$.
+
+\textbf{Giải bằng $\varepsilon$-constraint / Bi-level:}
+\begin{enumerate}
+  \item Giải bài toán \emph{restricted master} cho hạng Premium trước
+    (fixed capacity $|\mathcal{K}^{(3)}|$).
+  \item Thêm ràng buộc $W^{(3)}\leq W^{(3)*}+\delta$ vào master.
+  \item Giải tiếp cho hạng Plus, rồi Standard.
+\end{enumerate}
+\end{ridebox}
+
+\textbf{SLA Guarantee:} Khách Premium được cam kết ETA tối đa $T_{\max}^{(3)}=5$ phút;
+ràng buộc cứng này được đưa vào bài toán assignment như:
+\begin{equation}
+  x_{ijk}=0 \quad\text{nếu}\; \hat{\tau}(\ell_k,pu_j) > T_{\max}^{(r_j)}
+\end{equation}
+tức là không ghép cặp nếu xe không thể đến kịp trong SLA.
+
+%% ================================================================
+\section{Multi-Agent RL cho Hệ thống Toàn cục}
+
+\subsection{CTDE --- Centralized Training, Decentralized Execution}
+
+\begin{formulabox}{QMIX --- Monotonic Value Function Factorisation}
+\begin{align}
+  \pi_k^*(a_k|o_k) &= \argmax_{a_k} Q^{\mathrm{mix}}_\theta(\bm{o},\bm{a})\\
+  Q^{\mathrm{mix}}_\theta(\bm{o},\bm{a}) &= f_\theta(Q_1(o_1,a_1),\ldots,Q_m(o_m,a_m))
+\end{align}
+\end{formulabox}
+
+Đảm bảo tính chất \textbf{IGM} (Individual-Global Max): quyết định tham lam
+của từng agent suy ra từ global optimum.
+
+Trạng thái $o_k$ của agent $k$ (xe điện Green SM) bổ sung:
+$o_k = (\ell_k, e_k, \text{orders assigned}, \text{nearest charger ETA})$.
+
+\subsection{Continuous Learning và Feedback Loop}
+
+\begin{equation}
+  \theta_{t+1}
+  = \theta_t - \eta\,\nabla_\theta\,
+    \mathcal{L}(\theta_t;\,\mathcal{D}_{\mathrm{replay}})
+\end{equation}
+
+Dữ liệu thực tế (SoC thực tế vs dự báo, hủy chuyến, thời gian chờ sạc)
+liên tục cập nhật vào \emph{Prioritized Experience Replay}.
+Online fine-tuning mỗi giờ bằng \emph{Curriculum Learning}
+(đơn giản $\rightarrow$ phức tạp).
+
+%% ================================================================
+\section{Tóm tắt Pipeline \& Hướng Phát triển}
+
+\subsection{Bản đồ từ bài toán đến kỹ thuật (cập nhật)}
+
+\begin{table}[h!]
+\centering
+\caption{Mapping đầy đủ: Bài toán -- Mô hình -- Kỹ thuật DS/AI}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{p{3.4cm}p{3.6cm}p{4.2cm}}
+\toprule
+\textbf{Bài toán} & \textbf{Công thức} & \textbf{Kỹ thuật DS/AI} \\
+\midrule
+\multicolumn{3}{l}{\textit{--- Logistics / Giao hàng ---}}\\
+Ghép đơn cùng tuyến & ILP/McCormick & ST-DBSCAN, Greedy Insertion \\
+Định tuyến động & DVRP/VRPTW+MTZ & PPO+GAE, Attention Model \\
+Dự đoán ETA & Graph Regression & ST-GNN, Quantile+Huber \\
+Dự báo cầu & Spatial Time Series & ConvLSTM + GAT \\
+Ghép cặp tài xế & Assignment (imbal.) & Hungarian/Auction/$O(n^3)$ \\
+Tái phân bổ & Time-Expanded LP & LP / Earth Mover's Distance \\
+Robust scheduling & DRO / CVaR & Wasserstein Ball, CVaR-Opt \\
+\midrule
+\multicolumn{3}{l}{\textit{--- EV-Specific (Green SM) ---}}\\
+Routing + sạc điện & E-VRP-CS (SoC) & B\&B, Column Generation \\
+Lịch sạc & M/M/c + Reservation & Erlang C, ILP slot booking \\
+Hao mòn pin & Lifecycle cost & Rainflow + Arrhenius model \\
+Range anxiety & Risk-averse MDP & CVaR-PPO, Reward Shaping \\
+\midrule
+\multicolumn{3}{l}{\textit{--- Ride-hailing (Chở khách) ---}}\\
+Ghép chuyến pool & Shareability Network & Max Weighted Matching \\
+Định tuyến khách & DARP (Cordeau) & B\&P, LNS heuristic \\
+Hủy / từ chối & Stochastic Matching & Logistic Reg, Online BM \\
+Surge pricing & Cân bằng cung-cầu & Causal Inference, A/B test \\
+Điểm đón chính xác & POI Clustering & DBSCAN + Map Embedding \\
+\midrule
+\multicolumn{3}{l}{\textit{--- Hệ thống toàn cục ---}}\\
+Phối hợp đa agent & MARL (MDP) & QMIX, CTDE \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Target Latency theo Module (cập nhật)}
+
+\begin{table}[h!]
+\centering
+\caption{Latency và complexity của từng module}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Module} & \textbf{Mô hình} & \textbf{Complexity} & \textbf{Latency} \\
+\midrule
+Demand Forecast & ConvLSTM+GAT & $O(T|\mathcal{V}|^2)$ & $\sim$100ms \\
+ETA Prediction & ST-GNN+Quantile & $O(L|\mathcal{E}|)$ & $\sim$20ms \\
+Order Batching & ST-DBSCAN & $O(n^2)$ & $\sim$50ms \\
+Ride Pooling & Shareability Graph & $O(n^2)$+Matching & $\sim$80ms \\
+Repositioning & Time-Expanded LP & $O(n^3)$ & $\sim$500ms \\
+Dispatch & Hungarian/Auction & $O(n^3)/O(n^2\log n)$ & $\sim$10ms \\
+DARP Route & B\&P heuristic & NP-hard & $\sim$300ms \\
+E-VRP-CS & B\&B+SoC & NP-hard & $\sim$500ms \\
+Charging Schedule & M/M/c+ILP & $O(|\mathcal{F}|\cdot T)$ & $\sim$200ms \\
+Surge Pricing & Equilibrium model & $O(|G|)$ & $\sim$5ms \\
+MARL (QMIX) & Decentralized PPO & $O(m\cdot|\mathcal{A}|)$ & $\sim$1ms \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Hướng Nghiên cứu Tiếp theo}
+
+\begin{enumerate}[leftmargin=2em, itemsep=4pt]
+  \item \textbf{V2G (Vehicle-to-Grid):} xe điện rỗi bán điện lại lưới,
+        tối ưu chi phí năng lượng và tạo nguồn thu phụ.
+  \item \textbf{Multi-modal Trips:} phối hợp Xanh SM Bike $\to$ Metro $\to$ Taxi,
+        tối ưu chuyến đi đa phương tiện.
+  \item \textbf{LLM + Optimization:} dùng LLM làm planner, giao solver chuyên biệt.
+  \item \textbf{Foundation Models cho Time Series:} TimesFM, Chronos
+        cho dự báo cầu zero-shot.
+  \item \textbf{Diffusion Models cho Route Generation:}
+        sinh lộ trình bằng score-based generative models.
+  \item \textbf{Federated Learning:} học mô hình phân tán từ nhiều thành phố
+        mà không chia sẻ dữ liệu nhạy cảm.
+\end{enumerate}
+
+\subsection{Tài liệu Tham khảo}
+
+\begin{enumerate}[label={[\arabic*]}, leftmargin=3em, itemsep=2pt]
+  % Routing & VRP
+  \item Kool, W.\ et al.\ (2019). \textit{Attention, Learn to Solve Routing Problems.}
+        ICLR 2019.
+  \item Nazari, M.\ et al.\ (2018). \textit{RL for Solving the VRP.} NeurIPS 2018.
+  \item Li, Y.\ et al.\ (2021). \textit{Learning to Delegate for Large-Scale VRP.}
+        NeurIPS 2021.
+  % RL
+  \item Schulman, J.\ et al.\ (2017). \textit{PPO Algorithms.} arXiv:1707.06347.
+  \item Rashid, T.\ et al.\ (2018). \textit{QMIX: Monotonic Value Function
+        Factorisation for MARL.} ICML 2018.
+  % GNN
+  \item Veličković, P.\ et al.\ (2018). \textit{Graph Attention Networks.} ICLR 2018.
+  \item Shi, X.\ et al.\ (2015). \textit{Convolutional LSTM Network.} NeurIPS 2015.
+  % EV
+  \item Schneider, M., Stenger, A.\ \& Goeke, D.\ (2014).
+        \textit{The E-VRPTW with Recharging Stations.} Transportation Science.
+  \item Sweda, T., Dolinskaya, I.\ \& Klabjan, D.\ (2017).
+        \textit{Adaptive Routing and Recharging Policies for EVs.}
+        Transportation Science.
+  \item Keskin, M.\ \& Çatay, B.\ (2016).
+        \textit{Partial Recharge Strategies for the E-VRPTW.}
+        Computers \& Operations Research.
+  \item Pelletier, S., Jabali, O.\ \& Laporte, G.\ (2016).
+        \textit{50 Years of Vehicle Routing and EV Routing: Review.}
+        Transportation Research Part B.
+  % Ride-hailing
+  \item Cordeau, J.-F.\ \& Laporte, G.\ (2007).
+        \textit{The Dial-a-Ride Problem.} 4OR.
+  \item Santi, P.\ et al.\ (2014).
+        \textit{Quantifying the Benefits of Vehicle Pooling with
+        Shareability Networks.} PNAS.
+  \item Alonso-Mora, J.\ et al.\ (2017).
+        \textit{On-Demand High-Capacity Ride-Sharing via Dynamic
+        Trip-Vehicle Assignment.} PNAS.
+  \item Castillo, J., Knoepfle, D.\ \& Weyl, G.\ (2017).
+        \textit{Surge Pricing Solves the Wild Goose Chase.}
+        ACM EC 2017.
+  \item Özkan, E.\ \& Ward, A.\ (2020).
+        \textit{Dynamic Matching for Real-Time Ride-Sharing.}
+        Stochastic Systems.
+  % Robust / Stochastic
+  \item Mohajerin Esfahani, P.\ \& Kuhn, D.\ (2018).
+        \textit{Data-Driven DRO using Wasserstein Metric.} Math. Programming.
+  \item Rockafellar, R.T.\ \& Uryasev, S.\ (2000).
+        \textit{Optimization of Conditional Value-at-Risk.}
+        Journal of Risk.
+  % Hungarian / Matching
+  \item Bertsekas, D.P.\ (1988).
+        \textit{The Auction Algorithm: A Distributed Relaxation Method
+        for the Assignment Problem.} Annals of Operations Research.
+\end{enumerate}
+
+\end{document}
